@@ -13,7 +13,8 @@ def submit(user, payload):
     token = uuid4().hex
     item = {'token': token, 'owner': user['sub'], 'input': payload}
     with broker.pipeline() as pipe:
-        pipe.set(f'compute:{token}', json.dumps({'owner': user['sub'], 'status': 'queued'}), ex=86400)
+        # 记录里带上输入（含分档指纹），补录/更正完工日时才能按档作废。
+        pipe.set(f'compute:{token}', json.dumps({'owner': user['sub'], 'status': 'queued', 'input': payload}), ex=86400)
         pipe.rpush(QUEUE, json.dumps(item))
         pipe.execute()
     return {'token': token, 'status': 'queued'}
@@ -29,6 +30,8 @@ def view(user, token):
 
 def result(user, token):
     data = view(user, token)
+    if data['status'] == 'stale':
+        raise HTTPException(409, detail=data.get('detail') or '本档完工记录已变更，请重新估算')
     if data['status'] != 'ready':
         raise HTTPException(409, detail='等待计算完成后再提交')
     return data

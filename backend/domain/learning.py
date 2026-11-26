@@ -23,9 +23,12 @@ def calculate(data):
     held = np.vstack([model.predict(x[split:]) for model in models])
     lower,upper = np.min(held,axis=0),np.max(held,axis=0)
     point = sorted(float(model.predict(future)[0]) for model in models)
+    upper_days = max(1,ceil(point[1]))
     return {'algorithm':'QuantileRegressor','quantiles':list(QUANTILES),'seed':1088,
             'train_rows':split,'held_rows':len(y)-split,'lower_days':max(1,floor(point[0])),
-            'upper_days':max(1,ceil(point[1])),
+            'upper_days':upper_days,
+            # 模型原始上限；完工校准在其上叠加偏移，归档时用此值避免重复累加。
+            'raw_upper_days':upper_days,
             'coverage':round(float(np.mean((lower<=y[split:]) & (y[split:]<=upper))),4),
             'p20_pinball':round(mean_pinball_loss(y[split:],held[0],alpha=.2),4),
             'p80_pinball':round(mean_pinball_loss(y[split:],held[1],alpha=.8),4),

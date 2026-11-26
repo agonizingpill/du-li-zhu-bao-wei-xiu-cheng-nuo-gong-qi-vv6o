@@ -2,8 +2,6 @@ from datetime import date, timedelta
 from hashlib import sha256
 import json
 
-from sqlalchemy import text
-
 from core.records import get, insert, need, scan, update
 from domain.bench_steps_model import bench_steps
 from domain.lead_windows_model import lead_windows
@@ -20,8 +18,9 @@ def scope_for(conn,piece):
 
 
 def issue_ticket(conn,data,previous=None,reason=None):
-    # All publications take the same short transaction lock before checking bench occupancy.
-    conn.execute(text('SELECT pg_advisory_xact_lock(108812)'))
+    # 签票、更正完工日与归档估算共用一把事务锁：并发时先落账的一方算数。
+    from domain.completion_service import hold_publication_lock
+    hold_publication_lock(conn)
     estimate = get(conn,lead_windows,data.estimate,lock=True)
     piece = get(conn,pieces,estimate['piece'],lock=True)
     operations,signature = scope_for(conn,piece)
@@ -41,6 +40,7 @@ def issue_ticket(conn,data,previous=None,reason=None):
     need(data.bench in BENCHES,'请选择存在的金工工台')
     try:
         start = date.fromisoformat(data.start_day)
+        # 上限已含完工校准；用校准后的上限折成闭区间，已签日期不变。
         end = start + timedelta(days=estimate['upper_days']-1)
     except (OverflowError, ValueError):
         need(False,'开工日需要合法的 YYYY-MM-DD')

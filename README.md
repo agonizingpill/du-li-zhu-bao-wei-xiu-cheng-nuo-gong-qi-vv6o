@@ -10,6 +10,7 @@
 - 工序与双见证 `bench_steps`，字段为 `piece`（饰件编号）、`operation`（工序）、`minutes`（工台分钟）、`first_witness`（第一见证）、`second_witness`（第二见证）。模型约束位于 `backend/domain/bench_steps_model.py`，规则位于 `bench_steps_service.py`。
 - 工期区间 `lead_windows`，字段为 `piece`（饰件编号）、`backlog`（当前排队单数）、`signature`（工序快照）、`lower_days`（P20 日数）、`upper_days`（P80 日数）、`coverage`（留出覆盖）、`evidence`（模型计算）。模型约束位于 `backend/domain/lead_windows_model.py`，规则位于 `lead_windows_service.py`。
 - 客户承诺票 `promise_tickets`，字段为 `piece`（饰件编号）、`estimate`（换算凭证）、`bench`（工台）、`start_day`（开工日）、`end_day`（承诺最晚日）、`state`（状态）、`previous`（上一张票）、`reason`（修订原因）。模型约束位于 `backend/domain/promise_tickets_model.py`，规则位于 `promise_tickets_service.py`。
+- 实际完工 `completions`，字段为 `code`（记录编号）、`piece`（饰件编号）、`ticket`（承诺票）、`completed_day`（实际完工日）、`recorded_at`（落账时间）。同一承诺票只留一条记录，再次提交同一编号即为更正。模型位于 `backend/domain/completion_model.py`，规则位于 `completion_service.py`，校准算式位于 `calibration.py`。
 
 团队为模拟的7 人维修部，为门店收进的戒托等饰件安排工作台。
 
@@ -54,7 +55,8 @@ Compose 运行 Nginx、Python FastAPI、独立 Redis 消费进程、SQL 数据�
 | 饰件签收 | `/pieces` /pieces/receive | `frontend/src/pages/pieces.js` |
 | 工序与双见证 | `/bench_steps` /bench_steps/add-operation，/bench_steps/witness-stone | `frontend/src/pages/bench_steps.js` |
 | 工期区间 | `/lead_windows` /lead_windows/fit-window，/lead_windows/save-window | `frontend/src/pages/lead_windows.js` |
-| 客户承诺票 | `/promise_tickets` /promise_tickets/issue-ticket，/promise_tickets/revise-ticket | `frontend/src/pages/promise_tickets.js` |
+| 客户承诺票 | `/promise_tickets` /promise_tickets/issue-ticket，/promise_tickets/revise-ticket，/promise_tickets/traces | `frontend/src/pages/promise_tickets.js` |
+| 实际完工校准 | `/completions` /completions/record | `frontend/src/pages/completions.js` |
 
 SQL 实体与约束在 `backend/domain` 下维护。前端使用原生 ES modules。核心算子为 QuantileRegressor。两个线性 QuantileRegressor 分别拟合 0.2 和 0.8。110 条训练、末 30 条留出；分别报告损失和区间覆盖，另记预测顺序交叉次数。
 
@@ -65,5 +67,16 @@ SQL 实体与约束在 `backend/domain` 下维护。前端使用原生 ES module
 ### 工台占用规则
 
 工台 A/B 每个日历日仅接受一张现行票。签发区间从开工日开始，用 P80 日数折成闭区间。模型采用小店历史中的总工台分钟、饰件总重、贵重石数、排队单数，签发前复核工序快照和贵重石见证。日期重叠或重复签发返回明确原因。重排保留前序票编号、修订理由和原窗口，只有新窗口满足全部规则后同时更新状态。日期占用条和分位范围条直接读取后端记录。
+
+### 完工日校准
+
+柜台补录实际完工日后，用早期完工记录校准 P80 上限，再用后期记录比较新旧上限。规则集中在 `backend/domain/calibration.py`：
+
+1. 每件饰件只认最后一张票（修订链末端）；票上用估算的 `backlog` 决定分档（0–5、6–11、12–17、18–24）。
+2. 同档完工记录按实际完工日排序，前 60%（至少 4 条）用来校准，其余（至少 3 条）用来比较；总量不足 7 条直接沿用原估算。
+3. 新上限 = 模型原上限 + 早期残差（实际天数 − 原上限）的 P80 分位，向上取整，且不低于 P20。
+4. 若新上限在比较段的超期率或 P80 分位损失任一项变差，就退回原估算；校准的偏移、样本、指标和原因随 `evidence.calibration` 归档。
+5. 补录或更正完工日后，本档排队中的计算作废、本档已归档但未签票的估算就地重算；其他档照常。签票、更正与归档共用同一事务锁，并发时先落账的一方算数。
+6. 承诺票页面读取 `/promise_tickets/traces`，显示每张票签发时用的分档、样本、超期率与上限；已签日期不回改。
 
 演示文案不含个人姓名、地址、付款或实物运输信息。三个角色状态映射分别见 `backend/core/roles.py` 与 `frontend/src/store.js`；市面实际工期以诊断和双方约定为准。

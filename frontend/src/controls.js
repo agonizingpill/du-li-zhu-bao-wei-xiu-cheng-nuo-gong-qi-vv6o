@@ -41,7 +41,7 @@ export function actionForm(action, refresh) {
         const result = await awaitCompute(data.token, current => {
           notice.textContent = COMPUTE_STATES[current.status] || current.status;
         });
-        if (result.status === 'rejected') throw new Error(result.detail);
+        if (result.status === 'rejected' || result.status === 'stale') throw new Error(result.detail);
         notice.textContent = '任务 ' + data.token + ' · ' + display(result.result);
       } else {
         notice.textContent = action.success + ' · ' + display(data.code ?? data.status);

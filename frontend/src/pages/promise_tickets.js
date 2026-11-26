@@ -1,4 +1,5 @@
 import {benchCalendar} from '../bench-calendar.js';
+import {ticketTraces} from '../ticket-traces.js';
         import {workspace} from '../workspace.js';
         import {el} from '../dom.js';
 
@@ -141,5 +142,6 @@ import {benchCalendar} from '../bench-calendar.js';
         export async function render(root, role) {
           await workspace(root, role, page);
   await benchCalendar(root);
+  await ticketTraces(root);
 
         }

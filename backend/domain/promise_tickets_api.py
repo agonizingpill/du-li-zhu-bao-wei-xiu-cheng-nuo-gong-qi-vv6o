@@ -16,6 +16,13 @@ def list_promise_tickets(user=Depends(actor)):
         return scan(conn, promise_tickets)
 
 
+@router.get('/promise_tickets/traces')
+def list_traces(user=Depends(actor)):
+    from domain.completion_service import ticket_traces
+    with transaction() as conn:
+        return ticket_traces(conn)
+
+
 @router.post('/promise_tickets/issue-ticket')
 def issue_ticket(data: IssueTicket, user=Depends(actor)):
     allow(user, ('reviewer',))
